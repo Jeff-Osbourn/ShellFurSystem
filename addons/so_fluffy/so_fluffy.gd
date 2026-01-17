@@ -91,6 +91,17 @@ var distribution_bias: float = 2.0:
 			lod_manager.set_distribution_mode(distribution_mode, distribution_bias)
 		_update_materials()
 
+## ===== RENDERING MODE =====
+
+@export_group("Rendering Mode")
+
+## Rendering method: CASCADE (traditional, compatible) or INSTANCED (advanced, 3-10x faster)
+@export_enum("Material Cascade:0", "GPU Instancing:1")
+var rendering_mode: int = 0:  # Default to CASCADE for compatibility
+	set(v):
+		rendering_mode = v
+		_rebuild_fur()
+
 ## ===== PERFORMANCE =====
 
 @export_subgroup("Performance Optimizations")
@@ -132,6 +143,116 @@ var culling_mode: int = 1:  # Default to FRUSTUM
 		culling_mode = v
 		if culling_manager:
 			culling_manager.culling_mode = v
+
+## ===== MULTI-LAYER FUR =====
+
+@export_group("Multi-Layer Fur")
+
+## Enable multi-layer fur system (undercoat + guard hairs, different zones, etc.)
+@export var multilayer_enabled: bool = false:
+	set(v):
+		multilayer_enabled = v
+		_rebuild_fur()
+		notify_property_list_changed()
+
+## Fur layers (create FurLayer resources)
+@export var fur_layers: Array[FurLayer] = []:
+	set(v):
+		fur_layers = v
+		if multilayer_manager:
+			multilayer_manager.clear_layers()
+			for layer in fur_layers:
+				multilayer_manager.add_layer(layer)
+		_rebuild_fur()
+
+## Layer blending mode
+@export_enum("Composite:0", "Replace:1", "Additive:2", "Max:3")
+var layer_blend_mode: int = 0:
+	set(v):
+		layer_blend_mode = v
+		if multilayer_manager:
+			multilayer_manager.blend_mode = v
+
+## ===== AMBIENT OCCLUSION / SELF-SHADOWING =====
+
+@export_group("Ambient Occlusion")
+
+## Enable ambient occlusion (self-shadowing)
+@export var ao_enabled: bool = false:
+	set(v):
+		ao_enabled = v
+		_rebuild_fur()
+		notify_property_list_changed()
+
+## AO strength (0 = none, 1 = full)
+@export_range(0.0, 1.0, 0.01)
+var ao_strength: float = 0.7:
+	set(v):
+		ao_strength = v
+		_update_materials()
+
+## How much density affects AO
+@export_range(0.0, 1.0, 0.01)
+var ao_density_influence: float = 0.5:
+	set(v):
+		ao_density_influence = v
+		_update_materials()
+
+## Depth falloff (higher = darker at base)
+@export_range(1.0, 4.0, 0.1)
+var ao_depth_falloff: float = 2.0:
+	set(v):
+		ao_depth_falloff = v
+		_update_materials()
+
+## Color tint for shadowed areas
+@export_color_no_alpha
+var ao_color: Color = Color(0.3, 0.25, 0.2):
+	set(v):
+		ao_color = v
+		_update_materials()
+
+## Multi-sample AO (higher quality, more expensive)
+@export var ao_multi_sample: bool = false:
+	set(v):
+		ao_multi_sample = v
+		_update_materials()
+		notify_property_list_changed()
+
+## Number of AO samples (multi-sample only)
+@export_range(2, 16, 1)
+var ao_samples: int = 4:
+	set(v):
+		ao_samples = v
+		_update_materials()
+
+## Sample radius (multi-sample only)
+@export_range(0.01, 0.2, 0.01)
+var ao_sample_radius: float = 0.05:
+	set(v):
+		ao_sample_radius = v
+		_update_materials()
+
+## Enable self-shadowing from above shells
+@export var self_shadow_enabled: bool = false:
+	set(v):
+		self_shadow_enabled = v
+		_update_materials()
+		notify_property_list_changed()
+
+## Self-shadow strength
+@export_range(0.0, 1.0, 0.01)
+var self_shadow_strength: float = 0.5:
+	set(v):
+		self_shadow_strength = v
+		_update_materials()
+
+## Self-shadow falloff
+@export_range(1.0, 5.0, 0.1)
+var self_shadow_falloff: float = 3.0:
+	set(v):
+		self_shadow_falloff = v
+		_update_materials()
 
 ## ===== SHAPE AND GROWTH =====
 
@@ -407,9 +528,17 @@ var lod_manager: FurLODManager
 var material_manager: FurMaterialManager
 var physics_manager: FurPhysicsManager
 var culling_manager: FurCullingManager
+var multilayer_manager: FurMultiLayerManager
+var instanced_renderer: FurInstancedRenderer
 
 # The geometry we're growing fur on
 var mesh: GeometryInstance3D
+
+# Rendering mode enum
+enum RenderingMode {
+	CASCADE = 0,
+	INSTANCED = 1
+}
 
 func _validate_property(property: Dictionary):
 	# Hide/show emission section details
@@ -423,6 +552,18 @@ func _validate_property(property: Dictionary):
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 	# Hide/show LOD section details
 	if property.name in ["lod_min_distance", "lod_max_distance", "lod_minimum_shells"] and not lod_enabled:
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show multi-layer details
+	if property.name in ["fur_layers", "layer_blend_mode"] and not multilayer_enabled:
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show AO details
+	if property.name in ["ao_strength", "ao_density_influence", "ao_depth_falloff", "ao_color", "ao_multi_sample", "ao_samples", "ao_sample_radius", "self_shadow_enabled", "self_shadow_strength", "self_shadow_falloff"] and not ao_enabled:
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show AO multi-sample details
+	if property.name in ["ao_samples", "ao_sample_radius"] and (not ao_enabled or not ao_multi_sample):
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show self-shadow details
+	if property.name in ["self_shadow_strength", "self_shadow_falloff"] and (not ao_enabled or not self_shadow_enabled):
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 
 func _ready():
@@ -473,6 +614,16 @@ func _initialize_managers() -> void:
 	culling_manager.set_fur_length(length)
 	culling_manager.initialize(number_of_shells)
 
+	# Multi-Layer Manager
+	multilayer_manager = FurMultiLayerManager.new()
+	multilayer_manager.enabled = multilayer_enabled
+	multilayer_manager.blend_mode = layer_blend_mode
+	for layer in fur_layers:
+		multilayer_manager.add_layer(layer)
+
+	# Instanced Renderer
+	instanced_renderer = FurInstancedRenderer.new()
+
 	# Initialize physics
 	if mesh:
 		physics_manager.initialize(mesh)
@@ -485,24 +636,84 @@ func _rebuild_fur() -> void:
 	if Engine.is_editor_hint() and not preview_in_editor:
 		if material_manager:
 			material_manager.clear_materials(mesh)
+		if instanced_renderer:
+			instanced_renderer.cleanup()
 		return
 
-	# Clear old materials
+	# Clear old rendering
 	if material_manager:
 		material_manager.clear_materials(mesh)
+	if instanced_renderer:
+		instanced_renderer.cleanup()
 
 	# Rebuild texture atlas
 	_rebuild_texture_atlas()
 
-	# Create new materials
-	if material_manager:
-		material_manager.create_materials(mesh, number_of_shells, target_surfaces)
+	# Choose rendering path
+	if rendering_mode == RenderingMode.INSTANCED:
+		_build_instanced_rendering()
+	elif multilayer_enabled:
+		_build_multilayer_rendering()
+	else:
+		_build_cascade_rendering()
 
 	# Apply LOD
 	_update_lod()
 
 	# Update materials
 	_update_materials()
+
+## Build traditional cascade rendering
+func _build_cascade_rendering() -> void:
+	if not material_manager:
+		return
+
+	# Override shader based on AO settings
+	if ao_enabled:
+		material_manager.outer_shader = load("res://addons/so_fluffy/shaders/fur_ao.gdshader")
+		material_manager.inner_shader = load("res://addons/so_fluffy/shaders/fur_ao.gdshader")
+	else:
+		material_manager._load_shaders()  # Reload default shaders
+
+	material_manager.create_materials(mesh, number_of_shells, target_surfaces)
+
+## Build multi-layer rendering
+func _build_multilayer_rendering() -> void:
+	if not multilayer_manager or not material_manager:
+		return
+
+	multilayer_manager.enabled = true
+	multilayer_manager.create_layer_materials(
+		mesh,
+		target_surfaces,
+		use_texture_atlas,
+		use_simplified_inner_shaders,
+		detailed_shader_threshold
+	)
+
+## Build instanced rendering
+func _build_instanced_rendering() -> void:
+	if not instanced_renderer or not mesh:
+		return
+
+	# Get mesh from parent
+	var parent_mesh: Mesh = null
+	if mesh is MeshInstance3D:
+		parent_mesh = mesh.mesh
+
+	if parent_mesh == null:
+		push_error("Instanced rendering requires a MeshInstance3D parent with a valid mesh")
+		rendering_mode = RenderingMode.CASCADE
+		_build_cascade_rendering()
+		return
+
+	# Initialize instanced renderer
+	if instanced_renderer.initialize(self, parent_mesh, number_of_shells):
+		instanced_renderer.set_shell_heights(lod_manager.shell_heights)
+	else:
+		push_error("Failed to initialize instanced rendering, falling back to cascade")
+		rendering_mode = RenderingMode.CASCADE
+		_build_cascade_rendering()
 
 ## Rebuild texture atlas from current textures
 func _rebuild_texture_atlas() -> void:
@@ -513,7 +724,7 @@ func _rebuild_texture_atlas() -> void:
 
 ## Update all material parameters
 func _update_materials() -> void:
-	if not material_manager or not lod_manager:
+	if not lod_manager:
 		return
 
 	var params = {
@@ -543,10 +754,34 @@ func _update_materials() -> void:
 		"emission_color": emission_color,
 		"emission_energy_multiplier": emission_energy_multiplier,
 		"emission_texture": emission_texture,
+		# AO parameters
+		"ao_enabled": ao_enabled,
+		"ao_strength": ao_strength,
+		"ao_density_influence": ao_density_influence,
+		"ao_depth_falloff": ao_depth_falloff,
+		"ao_color": ao_color,
+		"ao_multi_sample": ao_multi_sample,
+		"ao_samples": ao_samples,
+		"ao_sample_radius": ao_sample_radius,
+		"self_shadow_enabled": self_shadow_enabled,
+		"self_shadow_strength": self_shadow_strength,
+		"self_shadow_falloff": self_shadow_falloff,
 	}
 
 	var lod_thickness = lod_manager.get_lod_thickness_multiplier()
-	material_manager.configure_materials(params, lod_manager.shell_heights, lod_thickness)
+
+	# Update based on rendering mode
+	if rendering_mode == RenderingMode.INSTANCED and instanced_renderer and instanced_renderer.enabled:
+		instanced_renderer.configure_material(params)
+	elif multilayer_enabled and multilayer_manager and multilayer_manager.enabled:
+		multilayer_manager.configure_layer_materials(
+			params,
+			lod_manager.shell_heights,
+			lod_thickness,
+			material_manager.atlas_texture if material_manager else null
+		)
+	elif material_manager:
+		material_manager.configure_materials(params, lod_manager.shell_heights, lod_thickness)
 
 ## Update LOD level and shell selection
 func _update_lod() -> void:
@@ -585,6 +820,16 @@ func _physics_process(delta):
 	physics_manager.update_linear_physics(delta, mesh)
 	physics_manager.update_rotational_physics(delta, mesh)
 
-	# Apply to materials
-	if material_manager:
+	# Apply physics based on rendering mode
+	if rendering_mode == RenderingMode.INSTANCED and instanced_renderer and instanced_renderer.enabled:
+		# For instanced rendering, pass physics as uniforms
+		instanced_renderer.apply_physics(
+			physics_manager.spring_offset,
+			Basis.from_euler(physics_manager.spring_rotation)
+		)
+	elif multilayer_enabled and multilayer_manager and multilayer_manager.enabled:
+		# For multi-layer, apply to each layer
+		multilayer_manager.apply_physics_to_layers(physics_manager)
+	elif material_manager:
+		# For cascade rendering
 		physics_manager.apply_to_materials(material_manager.shells, number_of_shells)
