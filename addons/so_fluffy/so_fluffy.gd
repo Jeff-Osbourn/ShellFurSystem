@@ -14,6 +14,51 @@ var preview_in_editor: bool = true:
 		if Engine.is_editor_hint():
 			_rebuild_fur()
 
+## ===== PRESETS =====
+
+@export_group("Presets")
+
+## Load a preset to quickly configure fur
+@export var preset: FurPreset:
+	set(v):
+		preset = v
+		if preset != null:
+			preset.apply_to_fur_node(self)
+
+## Quick preset selection (loads built-in presets)
+@export_enum("None:0", "Cat (Short):1", "Cat (Long):2", "Dog (Medium):3", "Fox:4", "Grass (Short):5", "Grass (Tall):6", "Moss:7", "Performance:8", "Maximum Quality:9")
+var quick_preset: int = 0:
+	set(v):
+		quick_preset = v
+		_apply_quick_preset(v)
+
+## ===== COMPUTE SHADER PREPROCESSING =====
+
+@export_group("Compute Preprocessing")
+
+## Enable compute shader preprocessing for noise (MASSIVE performance boost)
+@export var use_compute_preprocessing: bool = false:
+	set(v):
+		use_compute_preprocessing = v
+		_rebuild_fur()
+		notify_property_list_changed()
+
+## Noise texture size for compute preprocessing
+@export_enum("512:512", "1024:1024", "2048:2048", "4096:4096")
+var compute_texture_size: int = 1024:
+	set(v):
+		compute_texture_size = v
+		if use_compute_preprocessing:
+			_regenerate_compute_noise()
+
+## Noise algorithm type
+@export_enum("Gold Noise:0", "Perlin:1", "Simplex:2")
+var compute_noise_type: int = 0:
+	set(v):
+		compute_noise_type = v
+		if use_compute_preprocessing:
+			_regenerate_compute_noise()
+
 ## ===== TARGETING =====
 
 @export_group("Targeting")
@@ -530,9 +575,13 @@ var physics_manager: FurPhysicsManager
 var culling_manager: FurCullingManager
 var multilayer_manager: FurMultiLayerManager
 var instanced_renderer: FurInstancedRenderer
+var compute_preprocessor: FurComputePreprocessor
 
 # The geometry we're growing fur on
 var mesh: GeometryInstance3D
+
+# Compute-generated noise texture
+var compute_noise_texture: Texture2D
 
 # Rendering mode enum
 enum RenderingMode {
@@ -564,6 +613,9 @@ func _validate_property(property: Dictionary):
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 	# Hide/show self-shadow details
 	if property.name in ["self_shadow_strength", "self_shadow_falloff"] and (not ao_enabled or not self_shadow_enabled):
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show compute preprocessing details
+	if property.name in ["compute_texture_size", "compute_noise_type"] and not use_compute_preprocessing:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 
 func _ready():
@@ -624,6 +676,11 @@ func _initialize_managers() -> void:
 	# Instanced Renderer
 	instanced_renderer = FurInstancedRenderer.new()
 
+	# Compute Preprocessor
+	compute_preprocessor = FurComputePreprocessor.new()
+	if use_compute_preprocessing and compute_preprocessor.enabled:
+		compute_preprocessor.initialize()
+
 	# Initialize physics
 	if mesh:
 		physics_manager.initialize(mesh)
@@ -648,6 +705,10 @@ func _rebuild_fur() -> void:
 
 	# Rebuild texture atlas
 	_rebuild_texture_atlas()
+
+	# Generate compute preprocessing noise if enabled
+	if use_compute_preprocessing:
+		_regenerate_compute_noise()
 
 	# Choose rendering path
 	if rendering_mode == RenderingMode.INSTANCED:
@@ -727,6 +788,11 @@ func _update_materials() -> void:
 	if not lod_manager:
 		return
 
+	# Use compute-generated noise if available
+	var height_tex = compute_noise_texture if use_compute_preprocessing and compute_noise_texture else heightmap_texture
+	var turb_tex = compute_noise_texture if use_compute_preprocessing and compute_noise_texture else turbulence_texture
+	var jit_tex = compute_noise_texture if use_compute_preprocessing and compute_noise_texture else jitter_texture
+
 	var params = {
 		"length": length,
 		"density": density,
@@ -738,11 +804,12 @@ func _update_materials() -> void:
 		"thickness_curve": thickness_curve,
 		"thickness_scale": thickness_scale,
 		"render_skin": render_skin,
-		"heightmap_texture": heightmap_texture,
-		"turbulence_texture": turbulence_texture,
-		"jitter_texture": jitter_texture,
+		"heightmap_texture": height_tex,
+		"turbulence_texture": turb_tex,
+		"jitter_texture": jit_tex,
 		"turbulence_strength": turbulence_strength,
 		"jitter_strength": jitter_strength,
+		"use_compute_noise": use_compute_preprocessing and compute_noise_texture != null,
 		"curls_enabled": curls_enabled,
 		"curls_twist": curls_twist,
 		"curls_fill": curls_fill,
@@ -833,3 +900,75 @@ func _physics_process(delta):
 	elif material_manager:
 		# For cascade rendering
 		physics_manager.apply_to_materials(material_manager.shells, number_of_shells)
+
+## ===== PRESET FUNCTIONS =====
+
+## Apply a quick preset
+func _apply_quick_preset(preset_id: int) -> void:
+	if preset_id == 0:
+		return  # None
+
+	var loaded_preset: FurPreset = null
+
+	match preset_id:
+		1:  # Cat (Short)
+			loaded_preset = FurPreset.cat_short()
+		2:  # Cat (Long)
+			loaded_preset = FurPreset.cat_long()
+		3:  # Dog (Medium)
+			loaded_preset = FurPreset.dog_medium()
+		4:  # Fox
+			loaded_preset = FurPreset.fox()
+		5:  # Grass (Short)
+			loaded_preset = FurPreset.grass_short()
+		6:  # Grass (Tall)
+			loaded_preset = FurPreset.grass_tall()
+		7:  # Moss
+			loaded_preset = FurPreset.moss()
+		8:  # Performance
+			loaded_preset = FurPreset.performance_optimized()
+		9:  # Maximum Quality
+			loaded_preset = FurPreset.maximum_quality()
+
+	if loaded_preset:
+		loaded_preset.apply_to_fur_node(self)
+
+## Save current configuration as a preset
+func save_as_preset(preset_name: String = "Custom") -> FurPreset:
+	return FurPreset.create_from_fur_node(self, preset_name)
+
+## ===== COMPUTE PREPROCESSING FUNCTIONS =====
+
+## Regenerate compute shader noise texture
+func _regenerate_compute_noise() -> void:
+	if not use_compute_preprocessing or compute_preprocessor == null:
+		return
+
+	if not compute_preprocessor.enabled:
+		push_warning("Compute preprocessing not supported on this system")
+		use_compute_preprocessing = false
+		return
+
+	# Generate noise texture using compute shader
+	compute_preprocessor.noise_type = compute_noise_type
+	compute_noise_texture = compute_preprocessor.generate_noise_texture(
+		seed,
+		density,
+		scruffiness,
+		compute_texture_size
+	)
+
+	if compute_noise_texture:
+		# Apply to materials (use as heightmap/turbulence/jitter combined)
+		_update_materials()
+	else:
+		push_error("Failed to generate compute noise texture")
+		use_compute_preprocessing = false
+
+## Check if compute preprocessing is available
+func is_compute_preprocessing_supported() -> bool:
+	return FurComputePreprocessor.is_supported()
+
+## Get performance benefit of using compute preprocessing
+func get_compute_preprocessing_benefit() -> Dictionary:
+	return FurComputePreprocessor.get_performance_benefit(number_of_shells)

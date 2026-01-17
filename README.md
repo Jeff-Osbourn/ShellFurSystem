@@ -31,8 +31,10 @@ This version includes major performance optimizations and advanced features for 
 - **🦊 Multi-Layer Fur System** - Create realistic fur with undercoat + guard hairs, different zones, feathers, etc.
 - **🌑 Ambient Occlusion & Self-Shadowing** - Volumetric depth and realistic shadowing (minimal performance impact)
 - **⚡ GPU Instanced Rendering** - Render all shells in a single draw call (**3-10x performance boost!**)
+- **🎨 Presets System** - Quickly apply pre-configured fur (cat, dog, fox, grass, etc.) with one click
+- **💻 Compute Shader Preprocessing** - Pre-generate noise on GPU for **15-40x faster** noise evaluation!
 
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for performance documentation and [ADVANCED_FEATURES.md](ADVANCED_FEATURES.md) for advanced feature guides.
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for performance, [ADVANCED_FEATURES.md](ADVANCED_FEATURES.md) for advanced features, and [PRESETS_AND_COMPUTE.md](PRESETS_AND_COMPUTE.md) for presets and compute shaders.
 
 ## Core Features
 
