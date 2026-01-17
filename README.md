@@ -14,17 +14,25 @@ A shader is then used to render cross-sections of fur strands on each shell.
 
 # Features
 
-## ⚡ NEW: Performance Improvements (2026)
+## ⚡ NEW: Performance Improvements & Advanced Features (2026)
 
-This version includes major performance optimizations for Godot 4.5:
+This version includes major performance optimizations and advanced features for Godot 4.5:
 
+### Performance Optimizations
 - **🎨 Texture Atlas Optimization** - Combines multiple textures into one, reducing texture bandwidth by ~60% (**+15-25% performance**)
 - **🚀 Simplified Inner Shell Shaders** - Two-tier shader system (detailed outer, simplified inner) (**+30-40% performance**)
 - **📊 Adaptive Shell Distribution** - Non-linear spacing concentrates detail near surface (better quality with same shell count)
 - **🔍 Shell Culling System** - Frustum and occlusion culling for individual shells (**+10-40% performance** depending on mode)
 - **🧩 Modular Architecture** - Clean separation of LOD, materials, physics, and culling into dedicated managers
 
-**Total improvement: 40-70%** depending on configuration. See [IMPROVEMENTS.md](IMPROVEMENTS.md) for detailed documentation.
+**Performance gain: 40-70%** depending on configuration.
+
+### Advanced Features
+- **🦊 Multi-Layer Fur System** - Create realistic fur with undercoat + guard hairs, different zones, feathers, etc.
+- **🌑 Ambient Occlusion & Self-Shadowing** - Volumetric depth and realistic shadowing (minimal performance impact)
+- **⚡ GPU Instanced Rendering** - Render all shells in a single draw call (**3-10x performance boost!**)
+
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for performance documentation and [ADVANCED_FEATURES.md](ADVANCED_FEATURES.md) for advanced feature guides.
 
 ## Core Features
 
