@@ -218,6 +218,72 @@ var layer_blend_mode: int = 0:
 		if multilayer_manager:
 			multilayer_manager.blend_mode = v
 
+## ===== FINS SYSTEM =====
+
+@export_group("Fins")
+
+## Enable fins (perpendicular cards that fill side-view gaps)
+@export var fins_enabled: bool = false:
+	set(v):
+		fins_enabled = v
+		if fin_manager:
+			fin_manager.enabled = fins_enabled
+		_rebuild_fur()
+		notify_property_list_changed()
+
+## Fin placement strategy
+@export_enum("Radial:1", "Grid:2", "Edge-Based:3", "Sparse:4")
+var fins_placement: int = 1:
+	set(v):
+		fins_placement = v
+		if fin_manager:
+			fin_manager.placement = v
+		_rebuild_fur()
+
+## Fin orientation mode
+@export_enum("Camera Facing:0", "Shell Perpendicular:1", "Fixed Horizontal:2", "Fixed Vertical:3")
+var fins_orientation: int = 0:
+	set(v):
+		fins_orientation = v
+		if fin_manager:
+			fin_manager.orientation = v
+
+## Number of fins to generate
+@export_range(4, 64, 1)
+var fins_count: int = 16:
+	set(v):
+		fins_count = v
+		if fin_manager:
+			fin_manager.fin_count = fins_count
+		_rebuild_fur()
+
+## Fin density multiplier
+@export_range(0.25, 4.0, 0.25)
+var fins_density: float = 1.0:
+	set(v):
+		fins_density = v
+		if fin_manager:
+			fin_manager.fin_density = fins_density
+		_rebuild_fur()
+
+## Width of each fin
+@export_range(0.01, 1.0, 0.01)
+var fins_width: float = 0.1:
+	set(v):
+		fins_width = v
+		if fin_manager:
+			fin_manager.fin_width = fins_width
+		_rebuild_fur()
+
+## Alpha boost for fins (compensates for fewer samples)
+@export_range(0.5, 2.0, 0.1)
+var fins_alpha_boost: float = 1.2:
+	set(v):
+		fins_alpha_boost = v
+		if fin_manager:
+			fin_manager.fin_alpha_boost = fins_alpha_boost
+		_update_materials()
+
 ## ===== AMBIENT OCCLUSION / SELF-SHADOWING =====
 
 @export_group("Ambient Occlusion")
@@ -566,16 +632,77 @@ var stiffness: float = 1.0:
 		if physics_manager:
 			physics_manager.stiffness = stiffness
 
+## ===== INTERACTIVE PHYSICS =====
+
+@export_subgroup("Interactive Physics (Collision)")
+
+## Enable interactive collision-based physics (separate from momentum physics)
+@export var interactive_physics_enabled: bool = false:
+	set(v):
+		interactive_physics_enabled = v
+		if interactive_physics_manager:
+			interactive_physics_manager.enabled = interactive_physics_enabled
+		notify_property_list_changed()
+
+## Zone configuration mode
+@export_enum("Simple (1 Zone):0", "Default (2 Zones):1", "Custom:2")
+var interactive_zones_mode: int = 0:
+	set(v):
+		interactive_zones_mode = v
+		if interactive_physics_manager:
+			_setup_interactive_zones()
+
+## Custom collision zones (only used when mode = Custom)
+@export var interactive_zones: Array[FurCollisionZone] = []:
+	set(v):
+		interactive_zones = v
+		if interactive_physics_manager and interactive_zones_mode == 2:
+			_setup_interactive_zones()
+
+## Global displacement strength multiplier
+@export_range(0.0, 3.0, 0.1)
+var interactive_strength: float = 1.0:
+	set(v):
+		interactive_strength = v
+		if interactive_physics_manager:
+			interactive_physics_manager.global_strength = interactive_strength
+
+## Smoothing speed (lower = smoother transitions)
+@export_range(0.05, 1.0, 0.05)
+var interactive_smoothing: float = 0.15:
+	set(v):
+		interactive_smoothing = v
+		if interactive_physics_manager:
+			interactive_physics_manager.smoothing = interactive_smoothing
+
+## Maximum displacement distance
+@export_range(0.0, 1.0, 0.05)
+var interactive_max_displacement: float = 0.3:
+	set(v):
+		interactive_max_displacement = v
+		if interactive_physics_manager:
+			interactive_physics_manager.max_displacement = interactive_max_displacement
+
+## Compression strength when fur is pushed
+@export_range(0.0, 1.0, 0.05)
+var interactive_compression: float = 0.5:
+	set(v):
+		interactive_compression = v
+		if interactive_physics_manager:
+			interactive_physics_manager.compression_strength = interactive_compression
+
 ## ===== INTERNAL STATE =====
 
 # Managers
 var lod_manager: FurLODManager
 var material_manager: FurMaterialManager
 var physics_manager: FurPhysicsManager
+var interactive_physics_manager: FurInteractivePhysicsManager
 var culling_manager: FurCullingManager
 var multilayer_manager: FurMultiLayerManager
 var instanced_renderer: FurInstancedRenderer
 var compute_preprocessor: FurComputePreprocessor
+var fin_manager: FurFinManager
 
 # The geometry we're growing fur on
 var mesh: GeometryInstance3D
@@ -599,11 +726,20 @@ func _validate_property(property: Dictionary) -> void:
 	# Hide/show physics section details
 	if property.name in ["physics_preview", "gravity", "spring_constant", "mass", "damping", "stretch", "stiffness", "rotational_physics_scale"] and not physics_enabled:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show interactive physics details
+	if property.name in ["interactive_zones_mode", "interactive_zones", "interactive_strength", "interactive_smoothing", "interactive_max_displacement", "interactive_compression"] and not interactive_physics_enabled:
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show custom zones
+	if property.name == "interactive_zones" and interactive_zones_mode != 2:
+		property.usage = PROPERTY_USAGE_NO_EDITOR
 	# Hide/show LOD section details
 	if property.name in ["lod_min_distance", "lod_max_distance", "lod_minimum_shells"] and not lod_enabled:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 	# Hide/show multi-layer details
 	if property.name in ["fur_layers", "layer_blend_mode"] and not multilayer_enabled:
+		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show fins details
+	if property.name in ["fins_placement", "fins_orientation", "fins_count", "fins_density", "fins_width", "fins_alpha_boost"] and not fins_enabled:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 	# Hide/show AO details
 	if property.name in ["ao_strength", "ao_density_influence", "ao_depth_falloff", "ao_color", "ao_multi_sample", "ao_samples", "ao_sample_radius", "self_shadow_enabled", "self_shadow_strength", "self_shadow_falloff"] and not ao_enabled:
@@ -632,6 +768,10 @@ func _exit_tree() -> void:
 		material_manager.clear_materials(mesh)
 	if compute_preprocessor:
 		compute_preprocessor.cleanup()
+	if fin_manager:
+		fin_manager.cleanup()
+	if interactive_physics_manager:
+		interactive_physics_manager.cleanup()
 
 ## Initialize all manager instances
 func _initialize_managers() -> void:
@@ -683,9 +823,30 @@ func _initialize_managers() -> void:
 	if use_compute_preprocessing and compute_preprocessor.enabled:
 		compute_preprocessor.initialize()
 
+	# Fin Manager
+	fin_manager = FurFinManager.new()
+	fin_manager.enabled = fins_enabled
+	fin_manager.placement = fins_placement
+	fin_manager.orientation = fins_orientation
+	fin_manager.fin_count = fins_count
+	fin_manager.fin_density = fins_density
+	fin_manager.fin_width = fins_width
+	fin_manager.fin_alpha_boost = fins_alpha_boost
+
+	# Interactive Physics Manager
+	interactive_physics_manager = FurInteractivePhysicsManager.new()
+	interactive_physics_manager.enabled = interactive_physics_enabled
+	interactive_physics_manager.global_strength = interactive_strength
+	interactive_physics_manager.smoothing = interactive_smoothing
+	interactive_physics_manager.max_displacement = interactive_max_displacement
+	interactive_physics_manager.compression_strength = interactive_compression
+
 	# Initialize physics
 	if mesh:
 		physics_manager.initialize(mesh)
+		fin_manager.initialize(mesh)
+		interactive_physics_manager.initialize(mesh)
+		_setup_interactive_zones()
 
 ## Rebuild entire fur system
 func _rebuild_fur() -> void:
@@ -704,6 +865,8 @@ func _rebuild_fur() -> void:
 		material_manager.clear_materials(mesh)
 	if instanced_renderer:
 		instanced_renderer.cleanup()
+	if fin_manager:
+		fin_manager.cleanup()
 
 	# Rebuild texture atlas
 	_rebuild_texture_atlas()
@@ -725,6 +888,11 @@ func _rebuild_fur() -> void:
 
 	# Update materials
 	_update_materials()
+
+	# Generate fins if enabled
+	if fins_enabled and fin_manager:
+		fin_manager.generate_fins(length, direction, number_of_shells)
+		_update_fin_materials()
 
 ## Build traditional cascade rendering
 func _build_cascade_rendering() -> void:
@@ -852,6 +1020,43 @@ func _update_materials() -> void:
 	elif material_manager:
 		material_manager.configure_materials(params, lod_manager.shell_heights, lod_thickness)
 
+## Update fin materials
+func _update_fin_materials() -> void:
+	if not fin_manager or not fin_manager.enabled:
+		return
+
+	# Create fin material based on fur shader
+	var fin_shader: Shader = load("res://addons/so_fluffy/shaders/fur_fin.gdshader")
+	var fin_material: ShaderMaterial = ShaderMaterial.new()
+	fin_material.shader = fin_shader
+
+	# Use compute-generated noise if available
+	var height_tex = compute_noise_texture if use_compute_preprocessing and compute_noise_texture else heightmap_texture
+	var turb_tex = compute_noise_texture if use_compute_preprocessing and compute_noise_texture else turbulence_texture
+
+	# Configure fin material with fur parameters
+	fin_material.set_shader_parameter("color", albedo_color)
+	fin_material.set_shader_parameter("fur_length", length)
+	fin_material.set_shader_parameter("alpha_boost", fins_alpha_boost)
+	fin_material.set_shader_parameter("heightmap", height_tex)
+	fin_material.set_shader_parameter("turbulence_map", turb_tex)
+	fin_material.set_shader_parameter("density", density)
+	fin_material.set_shader_parameter("thickness", thickness_scale)
+	fin_material.set_shader_parameter("scruffiness", scruffiness)
+	fin_material.set_shader_parameter("use_texture_atlas", use_texture_atlas and material_manager and material_manager.atlas_texture != null)
+
+	if use_texture_atlas and material_manager and material_manager.atlas_texture:
+		fin_material.set_shader_parameter("texture_atlas", material_manager.atlas_texture)
+
+	fin_material.set_shader_parameter("ambient_occlusion", ao_strength if ao_enabled else 0.0)
+	fin_material.set_shader_parameter("rim_light", 0.5)
+	fin_material.set_shader_parameter("rim_color", Color.WHITE)
+
+	# Apply material to all fins
+	for fin_mesh in fin_manager.fin_meshes:
+		if fin_mesh != null and is_instance_valid(fin_mesh):
+			fin_mesh.material_override = fin_material
+
 ## Update LOD level and shell selection
 func _update_lod() -> void:
 	if not lod_manager:
@@ -873,6 +1078,13 @@ func _process(_delta: float) -> void:
 			if new_lod != lod_manager.current_lod:
 				lod_manager.current_lod = new_lod
 				_update_lod()
+
+			# Update fin orientation for camera-facing mode
+			if fins_enabled and fin_manager:
+				fin_manager.update_orientation(camera)
+				# Update fin LOD
+				var distance: float = mesh.global_position.distance_to(camera.global_position)
+				fin_manager.update_lod(distance, lod_max_distance)
 
 	# Shell culling (future enhancement - would need to modify material visibility)
 	# Currently culling_manager calculates visibility but doesn't apply it
@@ -902,6 +1114,53 @@ func _physics_process(delta: float) -> void:
 	elif material_manager:
 		# For cascade rendering
 		physics_manager.apply_to_materials(material_manager.shells, number_of_shells)
+
+	# Apply physics to fins
+	if fins_enabled and fin_manager:
+		# Apply physics to fin materials
+		for fin_mesh in fin_manager.fin_meshes:
+			if fin_mesh != null and is_instance_valid(fin_mesh) and fin_mesh.material_override is ShaderMaterial:
+				var mat: ShaderMaterial = fin_mesh.material_override
+				mat.set_shader_parameter("physics_pos_offset", -physics_manager.spring_offset)
+				mat.set_shader_parameter("physics_rot_offset", Basis.from_euler(physics_manager.spring_rotation))
+
+	# Update and apply interactive physics
+	if interactive_physics_manager:
+		interactive_physics_manager.update(delta)
+
+		# Apply to all materials
+		if rendering_mode == RenderingMode.INSTANCED and instanced_renderer and instanced_renderer.enabled:
+			# For instanced rendering
+			if instanced_renderer.material and instanced_renderer.material is ShaderMaterial:
+				var mat: ShaderMaterial = instanced_renderer.material
+				mat.set_shader_parameter("interactive_physics_enabled", interactive_physics_enabled)
+				mat.set_shader_parameter("interactive_displacement", interactive_physics_manager.get_displacement())
+				mat.set_shader_parameter("interactive_compression", interactive_compression)
+		elif multilayer_enabled and multilayer_manager and multilayer_manager.enabled:
+			# For multi-layer rendering
+			for layer in multilayer_manager.layers:
+				if layer and layer.materials:
+					for mat in layer.materials:
+						if mat and mat is ShaderMaterial:
+							mat.set_shader_parameter("interactive_physics_enabled", interactive_physics_enabled)
+							mat.set_shader_parameter("interactive_displacement", interactive_physics_manager.get_displacement())
+							mat.set_shader_parameter("interactive_compression", interactive_compression)
+		elif material_manager:
+			# For cascade rendering
+			for mat in material_manager.shells:
+				if mat and mat is ShaderMaterial:
+					mat.set_shader_parameter("interactive_physics_enabled", interactive_physics_enabled)
+					mat.set_shader_parameter("interactive_displacement", interactive_physics_manager.get_displacement())
+					mat.set_shader_parameter("interactive_compression", interactive_compression)
+
+		# Apply to fins
+		if fins_enabled and fin_manager:
+			for fin_mesh in fin_manager.fin_meshes:
+				if fin_mesh != null and is_instance_valid(fin_mesh) and fin_mesh.material_override is ShaderMaterial:
+					var mat: ShaderMaterial = fin_mesh.material_override
+					mat.set_shader_parameter("interactive_physics_enabled", interactive_physics_enabled)
+					mat.set_shader_parameter("interactive_displacement", interactive_physics_manager.get_displacement())
+					mat.set_shader_parameter("interactive_compression", interactive_compression)
 
 ## ===== PRESET FUNCTIONS =====
 
@@ -938,6 +1197,24 @@ func _apply_quick_preset(preset_id: int) -> void:
 ## Save current configuration as a preset
 func save_as_preset(preset_name: String = "Custom") -> FurPreset:
 	return FurPreset.create_from_fur_node(self, preset_name)
+
+## ===== INTERACTIVE PHYSICS FUNCTIONS =====
+
+## Setup collision zones based on mode
+func _setup_interactive_zones() -> void:
+	if not interactive_physics_manager or not mesh:
+		return
+
+	match interactive_zones_mode:
+		0:  # Simple (1 Zone)
+			interactive_physics_manager.create_simple_zone()
+		1:  # Default (2 Zones - body + head)
+			interactive_physics_manager.create_default_zones()
+		2:  # Custom
+			interactive_physics_manager.clear_zones()
+			for zone in interactive_zones:
+				if zone != null:
+					interactive_physics_manager.add_zone(zone)
 
 ## ===== COMPUTE PREPROCESSING FUNCTIONS =====
 

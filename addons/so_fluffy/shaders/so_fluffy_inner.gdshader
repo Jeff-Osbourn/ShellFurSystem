@@ -40,9 +40,14 @@ uniform bool scale_height_gradient = true;
 uniform bool use_albedo_texture = false;
 uniform sampler2D albedo_texture : source_color;
 
-// Physics
+// Physics (Momentum-based)
 uniform vec3 physics_pos_offset = vec3(0.0, 0.0, 0.0);
 uniform mat3 physics_rot_offset;
+
+// Interactive Physics (Collision-based)
+uniform bool interactive_physics_enabled = false;
+uniform vec3 interactive_displacement = vec3(0.0, 0.0, 0.0);
+uniform float interactive_compression = 0.5;
 
 // Gold Noise - fast procedural noise
 float gold_noise(vec2 p) {
@@ -53,14 +58,23 @@ float gold_noise(vec2 p) {
 }
 
 void vertex() {
-	// Physics offset in world space
+	// Physics offset in world space (momentum-based)
 	vec3 physics_pos_offset_world = (vec4(physics_pos_offset, 0.0) * MODEL_MATRIX).xyz * h * 0.2;
+
+	// Interactive physics offset (collision-based)
+	vec3 interactive_offset = vec3(0.0);
+	if (interactive_physics_enabled) {
+		interactive_offset = (vec4(interactive_displacement, 0.0) * MODEL_MATRIX).xyz * h * h;
+		float compression_factor = 1.0 - (length(interactive_displacement) * interactive_compression * h);
+		compression_factor = max(compression_factor, 0.5);
+		height *= compression_factor;
+	}
 
 	// Growth direction blend
 	vec3 direction = static_direction_local + (vec4(static_direction_world, 0.0) * MODEL_MATRIX).xyz;
 
 	// Displace vertex
-	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world;
+	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world + interactive_offset;
 	VERTEX = VERTEX * physics_rot_offset;
 }
 

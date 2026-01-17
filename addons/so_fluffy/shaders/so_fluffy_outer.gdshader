@@ -54,9 +54,14 @@ uniform float emission_energy_multiplier = 1.0;
 uniform bool use_emission_texture = false;
 uniform sampler2D emission_texture : source_color;
 
-// Physics
+// Physics (Momentum-based)
 uniform vec3 physics_pos_offset = vec3(0.0, 0.0, 0.0);
 uniform mat3 physics_rot_offset;
+
+// Interactive Physics (Collision-based)
+uniform bool interactive_physics_enabled = false;
+uniform vec3 interactive_displacement = vec3(0.0, 0.0, 0.0);
+uniform float interactive_compression = 0.5;
 
 // Gold Noise
 float gold_noise(vec2 p) {
@@ -89,14 +94,26 @@ float atan2_approximation2(float x, float y) {
 }
 
 void vertex() {
-	// Physics offset in world space
+	// Physics offset in world space (momentum-based)
 	vec3 physics_pos_offset_world = (vec4(physics_pos_offset, 0.0) * MODEL_MATRIX).xyz * h * 0.2;
+
+	// Interactive physics offset (collision-based)
+	vec3 interactive_offset = vec3(0.0);
+	if (interactive_physics_enabled) {
+		// Apply displacement with height-based scaling (more effect at tips)
+		interactive_offset = (vec4(interactive_displacement, 0.0) * MODEL_MATRIX).xyz * h * h;
+
+		// Compression effect (reduce height when pushed)
+		float compression_factor = 1.0 - (length(interactive_displacement) * interactive_compression * h);
+		compression_factor = max(compression_factor, 0.5);  // Don't compress more than 50%
+		height *= compression_factor;
+	}
 
 	// Growth direction blend
 	vec3 direction = static_direction_local + (vec4(static_direction_world, 0.0) * MODEL_MATRIX).xyz;
 
 	// Displace vertex
-	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world;
+	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world + interactive_offset;
 	VERTEX = VERTEX * physics_rot_offset;
 }
 

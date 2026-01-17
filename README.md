@@ -49,6 +49,8 @@ This version includes **massive** performance improvements and advanced features
 
 ### 🦊 Advanced Features
 
+- **Interactive Physics** - Collision-based fur interaction with Area3D (**NEW!**)
+- **Fins System** - Perpendicular cards fill side-view gaps (**NEW!**)
 - **Multi-Layer Fur** - Realistic undercoat + guard hairs, different zones
 - **Ambient Occlusion** - Volumetric self-shadowing (minimal cost!)
 - **GPU Instancing** - Single draw call for all shells (**3-10x faster!**)
@@ -72,6 +74,8 @@ This version includes **massive** performance improvements and advanced features
 - **[IMPROVEMENTS.md](IMPROVEMENTS.md)** - Performance optimizations detailed
 - **[ADVANCED_FEATURES.md](ADVANCED_FEATURES.md)** - Multi-layer, AO, instancing
 - **[PRESETS_AND_COMPUTE.md](PRESETS_AND_COMPUTE.md)** - Presets & compute shaders
+- **[FINS_SYSTEM.md](FINS_SYSTEM.md)** - Fins system for side-view coverage (**NEW!**)
+- **[INTERACTIVE_PHYSICS.md](INTERACTIVE_PHYSICS.md)** - Collision-based physics (**NEW!**)
 
 ---
 
@@ -80,6 +84,7 @@ This version includes **massive** performance improvements and advanced features
 ### Rendering
 
 - **Shell-based rendering** - No geometry duplication, shader-driven
+- **Fins system** - Perpendicular cards for side-view coverage (**NEW!**)
 - **Material cascading** - Traditional high-quality mode
 - **GPU instancing** - Ultra-fast single draw call rendering
 - **Dynamic LOD** - Distance-based shell reduction
