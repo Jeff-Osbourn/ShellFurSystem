@@ -589,7 +589,7 @@ enum RenderingMode {
 	INSTANCED = 1
 }
 
-func _validate_property(property: Dictionary):
+func _validate_property(property: Dictionary) -> void:
 	# Hide/show emission section details
 	if property.name in ["emission_color", "emission_energy_multiplier", "emission_texture"] and not use_emission:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
@@ -618,18 +618,20 @@ func _validate_property(property: Dictionary):
 	if property.name in ["compute_texture_size", "compute_noise_type"] and not use_compute_preprocessing:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
 
-func _ready():
-	mesh = get_parent()
+func _ready() -> void:
+	mesh = get_parent() as GeometryInstance3D
 	_initialize_managers()
 	_rebuild_fur()
 	notify_property_list_changed()
 
-func _enter_tree():
+func _enter_tree() -> void:
 	pass
 
 func _exit_tree() -> void:
 	if material_manager and mesh:
 		material_manager.clear_materials(mesh)
+	if compute_preprocessor:
+		compute_preprocessor.cleanup()
 
 ## Initialize all manager instances
 func _initialize_managers() -> void:
@@ -862,12 +864,12 @@ func _update_lod() -> void:
 
 	_update_materials()
 
-func _process(_delta):
+func _process(_delta: float) -> void:
 	# LOD
 	if lod_enabled and mesh and lod_manager:
 		var camera: Camera3D = get_viewport().get_camera_3d()
 		if camera:
-			var new_lod = lod_manager.calculate_lod(mesh, camera)
+			var new_lod: int = lod_manager.calculate_lod(mesh, camera)
 			if new_lod != lod_manager.current_lod:
 				lod_manager.current_lod = new_lod
 				_update_lod()
@@ -876,7 +878,7 @@ func _process(_delta):
 	# Currently culling_manager calculates visibility but doesn't apply it
 	# This would require render layer manipulation or shader parameters
 
-func _physics_process(delta):
+func _physics_process(delta: float) -> void:
 	if not physics_manager or not mesh:
 		return
 
