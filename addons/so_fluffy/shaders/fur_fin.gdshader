@@ -32,12 +32,18 @@ uniform float wind_speed : hint_range(0.0, 10.0) = 1.0;
 
 // ===== PHYSICS =====
 
+// Momentum-based physics
 uniform vec3 physics_pos_offset = vec3(0.0);
 uniform mat3 physics_rot_offset = mat3(
 	vec3(1.0, 0.0, 0.0),
 	vec3(0.0, 1.0, 0.0),
 	vec3(0.0, 0.0, 1.0)
 );
+
+// Interactive physics (collision-based)
+uniform bool interactive_physics_enabled = false;
+uniform vec3 interactive_displacement = vec3(0.0, 0.0, 0.0);
+uniform float interactive_compression = 0.5;
 
 // ===== LIGHTING =====
 
@@ -68,8 +74,14 @@ float smooth_noise(vec2 uv, float seed) {
 }
 
 void vertex() {
-	// Apply physics offset
+	// Apply momentum physics offset
 	VERTEX += physics_pos_offset * UV.y;  // More effect at tip
+
+	// Apply interactive physics (collision-based)
+	if (interactive_physics_enabled) {
+		vec3 interactive_offset = interactive_displacement * UV.y * UV.y;
+		VERTEX += interactive_offset;
+	}
 
 	// Apply physics rotation
 	vec3 local_pos = VERTEX - vec3(0.0, 0.0, 0.0);
