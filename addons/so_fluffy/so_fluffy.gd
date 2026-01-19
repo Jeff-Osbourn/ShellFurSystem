@@ -568,10 +568,21 @@ var emission_energy_multiplier: float = 1.0:
 @export var physics_enabled: bool = true:
 	set(v):
 		physics_enabled = v
-		if physics_manager:
+		if gpu_physics_mode and gpu_physics_manager:
+			# GPU physics doesn't need per-instance enable/disable
+			pass
+		elif physics_manager:
 			physics_manager.physics_enabled = physics_enabled
 			if not physics_enabled:
 				physics_manager.reset()
+		notify_property_list_changed()
+
+## Use GPU compute shader for physics (MASSIVE performance boost)
+## Falls back to CPU if compute shaders unavailable
+@export var gpu_physics_mode: bool = false:
+	set(v):
+		gpu_physics_mode = v
+		_initialize_physics()
 		notify_property_list_changed()
 
 ## Simulate physics in the editor.
@@ -738,8 +749,10 @@ var interactive_compression: float = 0.5:
 var lod_manager: FurLODManager
 var material_manager: FurMaterialManager
 var physics_manager: FurPhysicsManager
+var gpu_physics_manager: GPUFurPhysicsManager
 var interactive_physics_manager: FurInteractivePhysicsManager
 var culling_manager: FurCullingManager
+var occlusion_culling_manager: FurOcclusionCullingManager
 var multilayer_manager: FurMultiLayerManager
 var instanced_renderer: FurInstancedRenderer
 var compute_preprocessor: FurComputePreprocessor
@@ -832,24 +845,8 @@ func _initialize_managers() -> void:
 	material_manager.use_texture_atlas = use_texture_atlas
 	material_manager.detailed_shell_threshold = detailed_shader_threshold if use_simplified_inner_shaders else 0.0
 
-	# Physics Manager
-	physics_manager = FurPhysicsManager.new()
-	physics_manager.physics_enabled = physics_enabled
-	physics_manager.physics_preview = physics_preview
-	physics_manager.gravity = gravity
-	physics_manager.spring_constant = spring_constant
-	physics_manager.mass = mass
-	physics_manager.damping = damping
-	physics_manager.stretch = stretch
-	physics_manager.stiffness = stiffness
-	physics_manager.rotational_physics_scale = rotational_physics_scale
-	physics_manager.fur_length = length
-	# Wind
-	physics_manager.wind_enabled = wind_enabled
-	physics_manager.wind_direction = wind_direction
-	physics_manager.wind_strength = wind_strength
-	physics_manager.wind_turbulence = wind_turbulence
-	physics_manager.wind_speed = wind_speed
+	# Physics Manager (CPU or GPU based on mode)
+	_initialize_physics()
 
 	# Culling Manager
 	culling_manager = FurCullingManager.new()
@@ -857,6 +854,11 @@ func _initialize_managers() -> void:
 	culling_manager.culling_mode = culling_mode
 	culling_manager.set_fur_length(length)
 	culling_manager.initialize(number_of_shells)
+
+	# Occlusion Culling Manager (Enhanced LOD & Culling)
+	occlusion_culling_manager = FurOcclusionCullingManager.new()
+	occlusion_culling_manager.initialize(number_of_shells)
+	occlusion_culling_manager.preset_balanced()  # Default to balanced preset
 
 	# Multi-Layer Manager
 	multilayer_manager = FurMultiLayerManager.new()
@@ -891,12 +893,85 @@ func _initialize_managers() -> void:
 	interactive_physics_manager.max_displacement = interactive_max_displacement
 	interactive_physics_manager.compression_strength = interactive_compression
 
-	# Initialize physics
+	# Initialize managers that need mesh
 	if mesh:
-		physics_manager.initialize(mesh)
+		# Physics is initialized in _initialize_physics()
+		# CPU physics will be initialized there if needed
 		fin_manager.initialize(mesh)
 		interactive_physics_manager.initialize(mesh)
 		_setup_interactive_zones()
+
+## Initialize physics system (CPU or GPU mode)
+func _initialize_physics() -> void:
+	if gpu_physics_mode:
+		# Try to initialize GPU physics
+		if gpu_physics_manager:
+			gpu_physics_manager.cleanup()
+
+		gpu_physics_manager = GPUFurPhysicsManager.new()
+
+		# Initialize with current instance count (1 for now, can be expanded for multi-instance)
+		var success = gpu_physics_manager.initialize(1, number_of_shells)
+
+		if success:
+			# Configure GPU physics parameters
+			gpu_physics_manager.gravity = gravity
+			gpu_physics_manager.spring_constant = spring_constant
+			gpu_physics_manager.mass = mass
+			gpu_physics_manager.damping = damping
+			gpu_physics_manager.stretch = stretch
+			gpu_physics_manager.fur_length = length
+			gpu_physics_manager.stiffness = stiffness
+			gpu_physics_manager.rotational_physics_scale = rotational_physics_scale
+			gpu_physics_manager.wind_enabled = wind_enabled
+			gpu_physics_manager.wind_direction = wind_direction
+			gpu_physics_manager.wind_strength = wind_strength
+			gpu_physics_manager.wind_turbulence = wind_turbulence
+			gpu_physics_manager.wind_speed = wind_speed
+
+			push_warning("GPU Physics Mode enabled - physics now run on GPU compute shader")
+
+			# Clean up CPU physics if it exists
+			if physics_manager:
+				physics_manager = null
+		else:
+			# GPU physics failed - fall back to CPU
+			push_error("GPU physics initialization failed - falling back to CPU physics")
+			gpu_physics_mode = false
+			gpu_physics_manager = null
+			_initialize_cpu_physics()
+	else:
+		# Use CPU physics
+		_initialize_cpu_physics()
+
+		# Clean up GPU physics if it exists
+		if gpu_physics_manager:
+			gpu_physics_manager.cleanup()
+			gpu_physics_manager = null
+
+## Initialize CPU-based physics
+func _initialize_cpu_physics() -> void:
+	physics_manager = FurPhysicsManager.new()
+	physics_manager.physics_enabled = physics_enabled
+	physics_manager.physics_preview = physics_preview
+	physics_manager.gravity = gravity
+	physics_manager.spring_constant = spring_constant
+	physics_manager.mass = mass
+	physics_manager.damping = damping
+	physics_manager.stretch = stretch
+	physics_manager.stiffness = stiffness
+	physics_manager.rotational_physics_scale = rotational_physics_scale
+	physics_manager.fur_length = length
+	# Wind
+	physics_manager.wind_enabled = wind_enabled
+	physics_manager.wind_direction = wind_direction
+	physics_manager.wind_strength = wind_strength
+	physics_manager.wind_turbulence = wind_turbulence
+	physics_manager.wind_speed = wind_speed
+
+	# Initialize with mesh if available
+	if mesh:
+		physics_manager.initialize(mesh)
 
 ## Rebuild entire fur system
 func _rebuild_fur() -> void:
