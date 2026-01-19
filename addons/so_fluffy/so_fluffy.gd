@@ -632,6 +632,47 @@ var stiffness: float = 1.0:
 		if physics_manager:
 			physics_manager.stiffness = stiffness
 
+@export_subgroup("Wind")
+
+## Enable wind simulation
+@export var wind_enabled: bool = false:
+	set(v):
+		wind_enabled = v
+		if physics_manager:
+			physics_manager.wind_enabled = wind_enabled
+		notify_property_list_changed()
+
+## Wind direction (world space)
+@export var wind_direction: Vector3 = Vector3(1.0, 0.0, 0.0):
+	set(v):
+		wind_direction = v
+		if physics_manager:
+			physics_manager.wind_direction = wind_direction
+
+## Wind strength
+@export_range(0.0, 10.0, 0.1)
+var wind_strength: float = 1.0:
+	set(v):
+		wind_strength = v
+		if physics_manager:
+			physics_manager.wind_strength = wind_strength
+
+## Wind turbulence (randomness)
+@export_range(0.0, 1.0, 0.05)
+var wind_turbulence: float = 0.3:
+	set(v):
+		wind_turbulence = v
+		if physics_manager:
+			physics_manager.wind_turbulence = wind_turbulence
+
+## Wind speed (how fast gusts change)
+@export_range(0.1, 5.0, 0.1)
+var wind_speed: float = 1.0:
+	set(v):
+		wind_speed = v
+		if physics_manager:
+			physics_manager.wind_speed = wind_speed
+
 ## ===== INTERACTIVE PHYSICS =====
 
 @export_subgroup("Interactive Physics (Collision)")
@@ -726,6 +767,9 @@ func _validate_property(property: Dictionary) -> void:
 	# Hide/show physics section details
 	if property.name in ["physics_preview", "gravity", "spring_constant", "mass", "damping", "stretch", "stiffness", "rotational_physics_scale"] and not physics_enabled:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
+	# Hide/show wind details
+	if property.name in ["wind_direction", "wind_strength", "wind_turbulence", "wind_speed"] and (not physics_enabled or not wind_enabled):
+		property.usage = PROPERTY_USAGE_NO_EDITOR
 	# Hide/show interactive physics details
 	if property.name in ["interactive_zones_mode", "interactive_zones", "interactive_strength", "interactive_smoothing", "interactive_max_displacement", "interactive_compression"] and not interactive_physics_enabled:
 		property.usage = PROPERTY_USAGE_NO_EDITOR
@@ -800,6 +844,12 @@ func _initialize_managers() -> void:
 	physics_manager.stiffness = stiffness
 	physics_manager.rotational_physics_scale = rotational_physics_scale
 	physics_manager.fur_length = length
+	# Wind
+	physics_manager.wind_enabled = wind_enabled
+	physics_manager.wind_direction = wind_direction
+	physics_manager.wind_strength = wind_strength
+	physics_manager.wind_turbulence = wind_turbulence
+	physics_manager.wind_speed = wind_speed
 
 	# Culling Manager
 	culling_manager = FurCullingManager.new()

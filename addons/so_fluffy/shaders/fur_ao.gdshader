@@ -57,7 +57,11 @@ uniform sampler2D emission_texture : source_color;
 
 // Physics (Momentum-based)
 uniform vec3 physics_pos_offset = vec3(0.0, 0.0, 0.0);
-uniform mat3 physics_rot_offset;
+uniform mat3 physics_rot_offset = mat3(
+	vec3(1.0, 0.0, 0.0),
+	vec3(0.0, 1.0, 0.0),
+	vec3(0.0, 0.0, 1.0)
+);
 
 // Interactive Physics (Collision-based)
 uniform bool interactive_physics_enabled = false;
@@ -177,23 +181,23 @@ float calculate_ao(vec2 uv, float shell_h, float strand_density) {
 
 void vertex() {
 	// Physics offset in world space (momentum-based)
-	vec3 physics_pos_offset_world = (vec4(physics_pos_offset, 0.0) * MODEL_MATRIX).xyz * h * 0.2;
+	vec3 physics_pos_offset_world = (MODEL_MATRIX * vec4(physics_pos_offset, 0.0)).xyz * h * 0.2;
 
 	// Interactive physics offset (collision-based)
 	vec3 interactive_offset = vec3(0.0);
 	if (interactive_physics_enabled) {
-		interactive_offset = (vec4(interactive_displacement, 0.0) * MODEL_MATRIX).xyz * h * h;
+		interactive_offset = (MODEL_MATRIX * vec4(interactive_displacement, 0.0)).xyz * h * h;
 		float compression_factor = 1.0 - (length(interactive_displacement) * interactive_compression * h);
 		compression_factor = max(compression_factor, 0.5);
 		height *= compression_factor;
 	}
 
 	// Growth direction blend
-	vec3 direction = static_direction_local + (vec4(static_direction_world, 0.0) * MODEL_MATRIX).xyz;
+	vec3 direction = static_direction_local + (MODEL_MATRIX * vec4(static_direction_world, 0.0)).xyz;
 
 	// Displace vertex
 	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world + interactive_offset;
-	VERTEX = VERTEX * physics_rot_offset;
+	VERTEX = physics_rot_offset * VERTEX;
 }
 
 void fragment() {
@@ -255,7 +259,9 @@ void fragment() {
 	// Thickness
 	float thickness;
 	if (use_thickness_curve) {
-		thickness = texture(thickness_curve, vec2(clamp(h / len, 0.0, 0.99), 0.0)).r * len;
+		// Guard against division by zero
+		float safe_len = max(len, 0.0001);
+		thickness = texture(thickness_curve, vec2(clamp(h / safe_len, 0.0, 0.99), 0.0)).r * len;
 	} else {
 		thickness = h;
 	}
@@ -276,7 +282,9 @@ void fragment() {
 		// Height gradient
 		float grad_h = h;
 		if (scale_height_gradient) {
-			grad_h /= len;
+			// Guard against division by zero
+			float safe_len = max(len, 0.0001);
+			grad_h /= safe_len;
 		}
 
 		vec3 height_col;
