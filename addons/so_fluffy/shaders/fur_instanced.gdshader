@@ -55,7 +55,16 @@ uniform sampler2D emission_texture : source_color;
 
 // Physics (applied uniformly to all instances)
 uniform vec3 physics_pos_offset = vec3(0.0, 0.0, 0.0);
-uniform mat3 physics_rot_offset = mat3(1.0);
+uniform mat3 physics_rot_offset = mat3(
+	vec3(1.0, 0.0, 0.0),
+	vec3(0.0, 1.0, 0.0),
+	vec3(0.0, 0.0, 1.0)
+);
+
+// Interactive Physics (Collision-based)
+uniform bool interactive_physics_enabled = false;
+uniform vec3 interactive_displacement = vec3(0.0, 0.0, 0.0);
+uniform float interactive_compression = 0.5;
 
 // Ambient Occlusion
 uniform bool ao_enabled = false;
@@ -108,15 +117,24 @@ void vertex() {
 	// INSTANCE_CUSTOM.r contains the shell height (0.0 to 1.0)
 	float h = INSTANCE_CUSTOM.r;
 
-	// Physics offset in world space
-	vec3 physics_pos_offset_world = (vec4(physics_pos_offset, 0.0) * MODEL_MATRIX).xyz * h * 0.2;
+	// Physics offset in world space (momentum-based)
+	vec3 physics_pos_offset_world = (MODEL_MATRIX * vec4(physics_pos_offset, 0.0)).xyz * h * 0.2;
+
+	// Interactive physics offset (collision-based)
+	vec3 interactive_offset = vec3(0.0);
+	if (interactive_physics_enabled) {
+		interactive_offset = (MODEL_MATRIX * vec4(interactive_displacement, 0.0)).xyz * h * h;
+		float compression_factor = 1.0 - (length(interactive_displacement) * interactive_compression * h);
+		compression_factor = max(compression_factor, 0.5);
+		height *= compression_factor;
+	}
 
 	// Growth direction blend
-	vec3 direction = static_direction_local + (vec4(static_direction_world, 0.0) * MODEL_MATRIX).xyz;
+	vec3 direction = static_direction_local + (MODEL_MATRIX * vec4(static_direction_world, 0.0)).xyz;
 
 	// Displace vertex based on shell height
-	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world;
-	VERTEX = VERTEX * physics_rot_offset;
+	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world + interactive_offset;
+	VERTEX = physics_rot_offset * VERTEX;
 
 	// Pass h to fragment shader via COLOR.r
 	// (We can't use custom varying in spatial shaders, so use COLOR as transport)
@@ -179,7 +197,9 @@ void fragment() {
 	// Thickness
 	float thickness;
 	if (use_thickness_curve) {
-		thickness = texture(thickness_curve, vec2(clamp(h / len, 0.0, 0.99), 0.0)).r * len;
+		// Guard against division by zero
+		float safe_len = max(len, 0.0001);
+		thickness = texture(thickness_curve, vec2(clamp(h / safe_len, 0.0, 0.99), 0.0)).r * len;
 	} else {
 		thickness = h;
 	}
@@ -200,7 +220,9 @@ void fragment() {
 		// Height gradient
 		float grad_h = h;
 		if (scale_height_gradient) {
-			grad_h /= len;
+			// Guard against division by zero
+			float safe_len = max(len, 0.0001);
+			grad_h /= safe_len;
 		}
 
 		vec3 height_col;

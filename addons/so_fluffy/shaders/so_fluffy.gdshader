@@ -43,7 +43,11 @@ uniform float thickness_scale = 1.0;
 
 // physics
 uniform vec3 physics_pos_offset = vec3(0.0, 0.0, 0.0);
-uniform mat3 physics_rot_offset;
+uniform mat3 physics_rot_offset = mat3(
+	vec3(1.0, 0.0, 0.0),
+	vec3(0.0, 1.0, 0.0),
+	vec3(0.0, 0.0, 1.0)
+);
 
 // Gold Noise ©2015 dcerisano@standard3d.com
 // - based on the Golden Ratio
@@ -87,11 +91,11 @@ float atan2_approximation2( float x, float y ) {
 	return atan;
 }
 
-void vertex() {	
-	vec3 physics_pos_offset_world = (vec4(physics_pos_offset, 0.0) * MODEL_MATRIX).xyz * h * 0.2;
-	vec3 direction = static_direction_local + (vec4(static_direction_world, 0.0) * MODEL_MATRIX).xyz;
+void vertex() {
+	vec3 physics_pos_offset_world = (MODEL_MATRIX * vec4(physics_pos_offset, 0.0)).xyz * h * 0.2;
+	vec3 direction = static_direction_local + (MODEL_MATRIX * vec4(static_direction_world, 0.0)).xyz;
 	VERTEX += (NORMAL * normal_strength + direction * (1.0 - normal_strength)) * height * h + physics_pos_offset_world;
-	VERTEX = VERTEX * physics_rot_offset;
+	VERTEX = physics_rot_offset * VERTEX;
 }
 
 void fragment() {	
@@ -129,7 +133,9 @@ void fragment() {
 	
 	float thickness;
 	if(use_thickness_curve) {
-		thickness = texture(thickness_curve, vec2(clamp(h / len, 0.0, 0.99), 0.0)).r * len;
+		// Guard against division by zero
+		float safe_len = max(len, 0.0001);
+		thickness = texture(thickness_curve, vec2(clamp(h / safe_len, 0.0, 0.99), 0.0)).r * len;
 	} else {
 		thickness = h;
 	}
@@ -148,7 +154,9 @@ void fragment() {
 		// sample height gradient
 		float grad_h = h;
 		if(scale_height_gradient) {
-			grad_h /= len;
+			// Guard against division by zero
+			float safe_len = max(len, 0.0001);
+			grad_h /= safe_len;
 		}
 		
 		vec3 height_col;

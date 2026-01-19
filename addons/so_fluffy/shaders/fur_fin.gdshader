@@ -125,8 +125,9 @@ void fragment() {
 
 	// Strand pattern
 	if (noise_val > threshold) {
-		// Calculate strand thickness
-		float dist_to_strand = abs(noise_val - threshold - thickness * 0.5) / (thickness * 0.5);
+		// Calculate strand thickness (guard against division by zero)
+		float safe_thickness = max(thickness * 0.5, 0.0001);
+		float dist_to_strand = abs(noise_val - threshold - thickness * 0.5) / safe_thickness;
 		dist_to_strand = clamp(dist_to_strand, 0.0, 1.0);
 
 		// Smooth falloff

@@ -186,7 +186,9 @@ void fragment() {
 	// Thickness
 	float thickness;
 	if (use_thickness_curve) {
-		thickness = texture(thickness_curve, vec2(clamp(h / len, 0.0, 0.99), 0.0)).r * len;
+		// Guard against division by zero
+		float safe_len = max(len, 0.0001);
+		thickness = texture(thickness_curve, vec2(clamp(h / safe_len, 0.0, 0.99), 0.0)).r * len;
 	} else {
 		thickness = h;
 	}
@@ -207,7 +209,9 @@ void fragment() {
 		// Height gradient
 		float grad_h = h;
 		if (scale_height_gradient) {
-			grad_h /= len;
+			// Guard against division by zero
+			float safe_len = max(len, 0.0001);
+			grad_h /= safe_len;
 		}
 
 		vec3 height_col;
